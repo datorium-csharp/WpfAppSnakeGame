@@ -21,23 +21,58 @@ namespace WpfAppSnakeGame
     public partial class MainWindow : Window
     {
         const int SnakeSquareSize = 20;
+        const int SnakeStartLength = 3;
+        const int SnakeStartSpeed = 400;
+        const int SnakeSpeedThreshold = 100;
+
+        private Random rnd = new Random();
 
         private SolidColorBrush snakeBodyBrush = Brushes.Green;
         private SolidColorBrush snakeHeadBrush = Brushes.YellowGreen;
         private List<SnakePart> snakeParts = new List<SnakePart>();
 
+        private UIElement snakeFood = null;
+        private SolidColorBrush foodBrush = Brushes.Red;
+
+        private System.Windows.Threading.DispatcherTimer gameTickTimer = new System.Windows.Threading.DispatcherTimer();
+
         public enum SnakeDirection { Left, Right, Up, Down };
         private SnakeDirection snakeDirection = SnakeDirection.Right;
+
         private int snakeLength;
+        private int currentScore = 0;
 
         public MainWindow()
         {
             InitializeComponent();
+            gameTickTimer.Tick += GameTickTimer_Tick;
+        }
+
+        private void StartNewGame()
+        {
+            snakeLength = SnakeStartLength;
+            snakeDirection = SnakeDirection.Right;
+            snakeParts.Add(new SnakePart() { Position = new Point(SnakeSquareSize * 5, SnakeSquareSize * 5) });
+            gameTickTimer.Interval = TimeSpan.FromMilliseconds(SnakeStartSpeed);
+
+            // Draw the snake  
+            DrawSnake();
+            DrawSnakeFood();
+            UpdateGameStatus();
+            // Go!          
+            gameTickTimer.IsEnabled = true;
+
+        }
+
+        private void GameTickTimer_Tick(object sender, EventArgs e)
+        {
+            MoveSnake();
         }
 
         private void Window_ContentRendered(object sender, EventArgs e)
         {
             DrawGameArea();
+            StartNewGame();            
         }
 
         private void DrawGameArea()
@@ -139,7 +174,112 @@ namespace WpfAppSnakeGame
             //... and then have it drawn!  
             DrawSnake();
             // We'll get to this later...  
-            //DoCollisionCheck();          
+            //DoCollisionCheck();
+            DoCollisionCheck();
+        }
+
+        private Point GetNextFoodPosition()
+        {
+            int maxX = (int)(GameArea.ActualWidth / SnakeSquareSize);
+            int maxY = (int)(GameArea.ActualHeight / SnakeSquareSize);
+            int foodX = rnd.Next(0, maxX) * SnakeSquareSize;
+            int foodY = rnd.Next(0, maxY) * SnakeSquareSize;
+
+            foreach (SnakePart snakePart in snakeParts)
+            {
+                if ((snakePart.Position.X == foodX) && (snakePart.Position.Y == foodY))
+                    return GetNextFoodPosition();
+            }
+
+            return new Point(foodX, foodY);
+        }
+
+        private void DrawSnakeFood()
+        {
+            Point foodPosition = GetNextFoodPosition();
+            snakeFood = new Ellipse()
+            {
+                Width = SnakeSquareSize,
+                Height = SnakeSquareSize,
+                Fill = foodBrush
+            };
+            GameArea.Children.Add(snakeFood);
+            Canvas.SetTop(snakeFood, foodPosition.Y);
+            Canvas.SetLeft(snakeFood, foodPosition.X);
+        }
+
+        private void Window_KeyUp(object sender, KeyEventArgs e)
+        {
+            SnakeDirection originalSnakeDirection = snakeDirection;
+            switch (e.Key)
+            {
+                case Key.Up:
+                    if (snakeDirection != SnakeDirection.Down)
+                        snakeDirection = SnakeDirection.Up;
+                    break;
+                case Key.Down:
+                    if (snakeDirection != SnakeDirection.Up)
+                        snakeDirection = SnakeDirection.Down;
+                    break;
+                case Key.Left:
+                    if (snakeDirection != SnakeDirection.Right)
+                        snakeDirection = SnakeDirection.Left;
+                    break;
+                case Key.Right:
+                    if (snakeDirection != SnakeDirection.Left)
+                        snakeDirection = SnakeDirection.Right;
+                    break;
+                case Key.Space:
+                    StartNewGame();
+                    break;
+            }
+            if (snakeDirection != originalSnakeDirection)
+                MoveSnake();
+        }
+
+        private void DoCollisionCheck()
+        {
+            SnakePart snakeHead = snakeParts[snakeParts.Count - 1];
+
+            if ((snakeHead.Position.X == Canvas.GetLeft(snakeFood)) && (snakeHead.Position.Y == Canvas.GetTop(snakeFood)))
+            {
+                EatSnakeFood();
+                return;
+            }
+
+            if ((snakeHead.Position.Y < 0) || (snakeHead.Position.Y >= GameArea.ActualHeight) ||
+            (snakeHead.Position.X < 0) || (snakeHead.Position.X >= GameArea.ActualWidth))
+            {
+                EndGame();
+            }
+
+            foreach (SnakePart snakeBodyPart in snakeParts.Take(snakeParts.Count - 1))
+            {
+                if ((snakeHead.Position.X == snakeBodyPart.Position.X) && (snakeHead.Position.Y == snakeBodyPart.Position.Y))
+                    EndGame();
+            }
+        }
+
+        private void EatSnakeFood()
+        {
+            snakeLength++;
+            currentScore++;
+            int timerInterval = Math.Max(SnakeSpeedThreshold, (int)gameTickTimer.Interval.TotalMilliseconds - (currentScore * 2));
+            gameTickTimer.Interval = TimeSpan.FromMilliseconds(timerInterval);
+            GameArea.Children.Remove(snakeFood);
+            DrawSnakeFood();
+            UpdateGameStatus();
+        }
+
+        private void UpdateGameStatus()
+        {
+            this.Title = "SnakeWPF - Score: " + currentScore + " - Game speed: " + gameTickTimer.Interval.TotalMilliseconds;
+        }
+
+        private void EndGame()
+        {
+            gameTickTimer.IsEnabled = false;
+            MessageBox.Show("Oooops, you died!\n\nTo start a new game, just press the Space bar...", "SnakeWPF");
         }
 
     }
